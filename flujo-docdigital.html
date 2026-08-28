@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flujo de descarga de DocDigital</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --background: #eef3f8;
+        --surface: #ffffff;
+        --text: #17202a;
+        --muted: #5d6875;
+        --border: #cbd5e1;
+        --blue: #005ea8;
+        --blue-soft: #e8f3fb;
+        --green: #1b7f4c;
+        --green-soft: #e9f7ef;
+        --amber: #9a6700;
+        --amber-soft: #fff7df;
+        --red: #b42318;
+        --red-soft: #fef0ee;
+        --shadow: 0 16px 40px rgb(15 23 42 / 10%);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at top left, #dcecf8 0, transparent 34rem),
+          var(--background);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(1120px, calc(100% - 32px));
+        margin: 40px auto;
+      }
+
+      header {
+        margin-bottom: 28px;
+        text-align: center;
+      }
+
+      h1 {
+        margin: 0;
+        color: #0f3d5e;
+        font-size: clamp(1.7rem, 4vw, 2.7rem);
+        line-height: 1.15;
+      }
+
+      header p {
+        max-width: 740px;
+        margin: 12px auto 0;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.55;
+      }
+
+      .diagram {
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: rgb(255 255 255 / 72%);
+        box-shadow: var(--shadow);
+      }
+
+      .stage {
+        padding: 28px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .stage:last-child {
+        border-bottom: 0;
+      }
+
+      .stage-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 22px;
+        color: #334155;
+        font-size: 0.8rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .stage-number {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--blue);
+        color: #fff;
+        letter-spacing: 0;
+      }
+
+      .flow-row {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        align-items: stretch;
+        gap: 42px;
+      }
+
+      .flow-row.three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .node {
+        position: relative;
+        display: flex;
+        min-height: 132px;
+        flex-direction: column;
+        justify-content: center;
+        padding: 20px;
+        border: 2px solid var(--border);
+        border-radius: 16px;
+        background: var(--surface);
+        text-align: center;
+      }
+
+      .node:not(:last-child)::after {
+        position: absolute;
+        top: 50%;
+        left: calc(100% + 10px);
+        width: 22px;
+        color: var(--blue);
+        content: "→";
+        font-size: 1.8rem;
+        font-weight: 800;
+        line-height: 1;
+        transform: translateY(-50%);
+      }
+
+      .node strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 1rem;
+        line-height: 1.35;
+      }
+
+      .node small {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+
+      .icon {
+        font-size: 1.65rem;
+        line-height: 1;
+      }
+
+      .official {
+        border-color: #72abd2;
+        background: var(--blue-soft);
+      }
+
+      .allowed {
+        border-color: #76b995;
+        background: var(--green-soft);
+      }
+
+      .warning {
+        border-color: #e8bf5b;
+        background: var(--amber-soft);
+      }
+
+      .blocked {
+        border-color: #e99a93;
+        background: var(--red-soft);
+      }
+
+      .decision {
+        margin: 0 auto;
+        border-style: dashed;
+        border-color: var(--blue);
+        background: #f8fbfe;
+      }
+
+      .decision::after {
+        content: none !important;
+      }
+
+      .decision-label {
+        align-self: center;
+        padding: 4px 9px;
+        border-radius: 999px;
+        background: var(--blue);
+        color: #fff;
+        font-size: 0.66rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+
+      .branch-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+        gap: 24px;
+        margin-top: 22px;
+      }
+
+      .branch {
+        position: relative;
+        padding-top: 30px;
+      }
+
+      .branch::before {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        color: var(--blue);
+        content: "↓";
+        font-size: 1.6rem;
+        font-weight: 800;
+        transform: translateX(-50%);
+      }
+
+      .branch-name {
+        position: absolute;
+        top: 4px;
+        left: calc(50% + 20px);
+        font-size: 0.76rem;
+        font-weight: 800;
+      }
+
+      .save-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 24px;
+      }
+
+      .save-path {
+        display: grid;
+        gap: 14px;
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: #f8fafc;
+      }
+
+      .save-path h2 {
+        margin: 0;
+        color: #334155;
+        font-size: 1rem;
+        text-align: center;
+      }
+
+      .save-path .node {
+        min-height: auto;
+      }
+
+      .save-path .node::after {
+        top: calc(100% + 1px);
+        left: 50%;
+        width: auto;
+        content: "↓";
+        transform: translateX(-50%);
+      }
+
+      .save-path .node:last-child::after {
+        content: none;
+      }
+
+      .result {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .result .node {
+        min-height: 112px;
+      }
+
+      .result .node::after {
+        content: none;
+      }
+
+      .summary {
+        margin-top: 22px;
+        padding: 18px 20px;
+        border-left: 5px solid var(--green);
+        border-radius: 10px;
+        background: var(--green-soft);
+        line-height: 1.55;
+      }
+
+      .summary strong {
+        color: #145c39;
+      }
+
+      footer {
+        padding: 18px 28px;
+        background: #0f3d5e;
+        color: #e6f2fa;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        text-align: center;
+      }
+
+      code {
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: rgb(15 23 42 / 10%);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      @media (max-width: 820px) {
+        main {
+          margin: 20px auto;
+        }
+
+        .stage {
+          padding: 22px 18px;
+        }
+
+        .flow-row,
+        .flow-row.three,
+        .save-grid,
+        .result,
+        .branch-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .flow-row {
+          gap: 34px;
+        }
+
+        .node:not(:last-child)::after {
+          top: calc(100% + 4px);
+          left: 50%;
+          width: auto;
+          content: "↓";
+          transform: translateX(-50%);
+        }
+
+        .branch-grid {
+          gap: 14px;
+        }
+
+        .branch-name {
+          left: calc(50% + 18px);
+        }
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+
+        main {
+          width: 100%;
+          margin: 0;
+        }
+
+        .diagram {
+          border: 0;
+          box-shadow: none;
+        }
+
+        .stage {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Flujo de descarga de DocDigital</h1>
+        <p>
+          El descargador no inicia sesión ni amplía permisos: automatiza descargas
+          que DocDigital autoriza previamente para la sesión oficial del usuario.
+        </p>
+      </header>
+
+      <section class="diagram" aria-label="Diagrama del flujo de descarga">
+        <div class="stage">
+          <div class="stage-title">
+            <span class="stage-number">1</span>
+            Autenticación oficial
+          </div>
+          <div class="flow-row">
+            <article class="node official">
+              <span class="icon" aria-hidden="true">🌐</span>
+              <strong>El usuario abre DocDigital</strong>
+              <small>Desde un navegador con acceso a Internet</small>
+            </article>
+            <article class="node official">
+              <span class="icon" aria-hidden="true">🔐</span>
+              <strong>Inicia sesión oficialmente</strong>
+              <small>ClaveÚnica / mecanismo oficial de DocDigital</small>
+            </article>
+            <article class="node official">
+              <span class="icon" aria-hidden="true">🎟️</span>
+              <strong>DocDigital crea la sesión</strong>
+              <small>El servidor entrega un token temporal</small>
+            </article>
+            <article class="node">
+              <span class="icon" aria-hidden="true">🧩</span>
+              <strong>La extensión muestra su panel</strong>
+              <small>Sólo dentro de los dominios de DocDigital</small>
+            </article>
+          </div>
+        </div>
+
+        <div class="stage">
+          <div class="stage-title">
+            <span class="stage-number">2</span>
+            Inicio y control de sesión
+          </div>
+          <article class="node decision">
+            <span class="decision-label">DECISIÓN</span>
+            <strong>¿Existe un token de sesión oficial activo?</strong>
+            <small>La extensión no puede crear ni reemplazar este token.</small>
+          </article>
+          <div class="branch-grid">
+            <div class="branch">
+              <span class="branch-name" style="color: var(--red)">No</span>
+              <article class="node blocked">
+                <span class="icon" aria-hidden="true">⛔</span>
+                <strong>El proceso se detiene</strong>
+                <small>Solicita iniciar sesión en DocDigital</small>
+              </article>
+            </div>
+            <div class="branch">
+              <span class="branch-name" style="color: var(--green)">Sí</span>
+              <article class="node allowed">
+                <span class="icon" aria-hidden="true">📁</span>
+                <strong>El usuario elige una carpeta</strong>
+                <small>Luego pulsa «iniciar descarga»</small>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div class="stage">
+          <div class="stage-title">
+            <span class="stage-number">3</span>
+            Consulta y autorización de documentos
+          </div>
+          <div class="flow-row three">
+            <article class="node">
+              <span class="icon" aria-hidden="true">📋</span>
+              <strong>Consulta las bandejas</strong>
+              <small>Solicitudes <code>GET</code> con el token oficial</small>
+            </article>
+            <article class="node decision">
+              <span class="decision-label">SERVIDOR</span>
+              <strong>DocDigital valida sesión y permisos</strong>
+              <small>El applet no toma esta decisión</small>
+            </article>
+            <article class="node allowed">
+              <span class="icon" aria-hidden="true">✅</span>
+              <strong>Entrega documentos autorizados</strong>
+              <small>Sólo los visibles para ese usuario</small>
+            </article>
+          </div>
+          <div class="result" style="margin-top: 20px">
+            <article class="node blocked">
+              <strong>401 · Sesión vencida</strong>
+              <small>La descarga se detiene.</small>
+            </article>
+            <article class="node warning">
+              <strong>403 · Sin permiso</strong>
+              <small>Se omite el documento o la bandeja.</small>
+            </article>
+            <article class="node warning">
+              <strong>Restringido o no disponible</strong>
+              <small>Se registra, pero no se descarga.</small>
+            </article>
+          </div>
+        </div>
+
+        <div class="stage">
+          <div class="stage-title">
+            <span class="stage-number">4</span>
+            Descarga y guardado
+          </div>
+          <div class="save-grid">
+            <section class="save-path" aria-label="Ruta de guardado en Chrome">
+              <h2>Chrome · acceso directo a carpeta</h2>
+              <article class="node official">
+                <strong>Descarga autorizada</strong>
+                <small>Principal, anexo o trazabilidad</small>
+              </article>
+              <article class="node allowed">
+                <strong>El navegador escribe el archivo</strong>
+                <small>Mediante la API de acceso a carpetas</small>
+              </article>
+            </section>
+
+            <section class="save-path" aria-label="Ruta de guardado en Brave">
+              <h2>Brave · ayudante local</h2>
+              <article class="node official">
+                <strong>La extensión valida la solicitud</strong>
+                <small>Origen, URL, categoría y nombre</small>
+              </article>
+              <article class="node official">
+                <strong>El ayudante vuelve a validar</strong>
+                <small>Token, URL y ruta de destino</small>
+              </article>
+              <article class="node allowed">
+                <strong>Guarda el archivo localmente</strong>
+                <small>Dentro de la carpeta elegida</small>
+              </article>
+            </section>
+          </div>
+        </div>
+
+        <div class="stage">
+          <div class="stage-title">
+            <span class="stage-number">5</span>
+            Repetición y resultado
+          </div>
+          <div class="flow-row three">
+            <article class="node">
+              <span class="icon" aria-hidden="true">🔁</span>
+              <strong>Repite el proceso</strong>
+              <small>Documentos, anexos, trazabilidad y bandejas</small>
+            </article>
+            <article class="node">
+              <span class="icon" aria-hidden="true">📊</span>
+              <strong>Cuenta los resultados</strong>
+              <small>Nuevos, existentes, no disponibles y errores</small>
+            </article>
+            <article class="node allowed">
+              <span class="icon" aria-hidden="true">🏁</span>
+              <strong>Muestra el resumen final</strong>
+              <small>El token no se almacena como archivo</small>
+            </article>
+          </div>
+
+          <div class="summary">
+            <strong>Idea central:</strong> sin ingreso oficial no existe token; sin
+            token el applet se detiene. DocDigital conserva la decisión final sobre
+            qué documento puede descargar cada usuario.
+          </div>
+        </div>
+
+        <footer>
+          Flujo construido a partir de <code>docdigital-downloader.js</code>,
+          <code>background.js</code> y <code>native_host.py</code>.
+        </footer>
+      </section>
+    </main>
+  </body>
+</html>

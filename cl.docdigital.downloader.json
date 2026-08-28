@@ -1,0 +1,9 @@
+{
+  "name": "cl.docdigital.downloader",
+  "description": "Selector y guardado local para DocDigital Downloader",
+  "path": "/ABSOLUTE/PATH/TO/DocDigital-Downloader/native_host.py",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://TU_ID_DE_EXTENSION/"
+  ]
+}
