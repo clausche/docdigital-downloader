@@ -4,6 +4,31 @@ Extensión local para Brave, Google Chrome o Microsoft Edge. Descarga el
 documento principal, los anexos y la trazabilidad disponibles en las bandejas
 del usuario, y los organiza por categoría.
 
+## Brave vs. Chrome/Edge
+
+Chrome y Edge soportan la File System Access API del navegador
+(`showDirectoryPicker`), así que la extensión la usa directamente: no
+necesitan Python ni ningún ayudante local, y funcionan igual en Linux,
+Windows o Mac. Solo tienes que cargar la extensión sin empaquetar y usarla.
+
+Brave deshabilita esa API a propósito, así que en Brave la extensión depende
+del ayudante local `native_host.py` (Python) para mostrar el selector de
+carpeta y escribir los archivos, y ese ayudante hay que registrarlo a mano en
+cada equipo (ver "Configurar el ayudante local en Brave" más abajo). Ese
+flujo solo está probado en Linux por ahora — en Windows requeriría además un
+wrapper ejecutable (`.bat`) y registrar el manifest en el Registro de
+Windows, algo que este repo todavía no documenta.
+
+## Instalar en Chrome o Edge
+
+1. Abre `chrome://extensions` (o `edge://extensions`).
+2. Activa **Modo de desarrollador**.
+3. Pulsa **Cargar descomprimida** y selecciona la carpeta
+   `DocDigital-Downloader`.
+
+Nada más que hacer: la extensión usa el selector de carpetas del navegador
+directamente.
+
 ## Instalar en Brave
 
 1. Abre `brave://extensions`.
@@ -13,13 +38,6 @@ del usuario, y los organiza por categoría.
 
 Si ya estaba instalada una versión anterior, pulsa **Recargar** en la tarjeta
 de la extensión y luego recarga la página de DocDigital.
-
-Brave deshabilita la API web de acceso a carpetas, por lo que esta versión usa
-el ayudante local `native_host.py` para mostrar el selector y escribir en el
-destino elegido. Este ayudante debe registrarse manualmente en cada equipo
-(ver "Configurar el ayudante local en Brave" más abajo). En Chrome utiliza
-`chrome://extensions`; allí la extensión usa el selector integrado del
-navegador y no necesita este paso.
 
 ## Configurar el ayudante local en Brave
 
