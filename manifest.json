@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DocDigital - Descargar todos",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Descarga y organiza documentos principales, anexos y trazabilidad desde las bandejas del usuario de DocDigital.",
   "permissions": ["nativeMessaging"],
   "background": {

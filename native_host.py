@@ -314,7 +314,7 @@ def download_file(message: dict[str, Any]) -> dict[str, Any]:
             "Authorization": f"Bearer {token}",
             "Origin": origin,
             "Referer": f"{origin}/",
-            "User-Agent": "Mozilla/5.0 DocDigital-Downloader/3.1",
+            "User-Agent": "Mozilla/5.0 DocDigital-Downloader/3.2",
         },
     )
     opener = build_opener(SafeRedirectHandler())
