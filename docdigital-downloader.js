@@ -702,6 +702,97 @@
     }
   }
 
+  function timestampForFilename(date) {
+    const pad = (value) => String(value).padStart(2, "0");
+    return (
+      `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
+      `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+    );
+  }
+
+  function buildContingencyReport(destination, results) {
+    const now = new Date();
+    const destinationName =
+      destination.kind === "directory" ? destination.handle.name : destination.name;
+    const downloaded = results.filter((r) => r.status === "descargado").length;
+    const unavailable = results.filter((r) => r.status === "no_disponible").length;
+    const failed = results.filter((r) => r.status === "error").length;
+    const skipped = results.filter((r) => r.status === "omitido_existente").length;
+
+    const lines = [
+      "DocDigital Downloader — Resumen de contingencias",
+      `Generado: ${now.toLocaleString("es-CL")}`,
+      `Carpeta destino: ${destinationName}`,
+      "",
+      "TOTALES",
+      `Nuevos: ${downloaded} | Ya existían: ${skipped} | No disponibles: ${unavailable} | Errores: ${failed}`,
+      "",
+      "POR BANDEJA",
+    ];
+
+    for (const tray of TRAYS) {
+      const trayResults = results.filter((r) => r.trayKey === tray.key);
+      if (trayResults.length === 0) {
+        continue;
+      }
+      const trayDownloaded = trayResults.filter((r) => r.status === "descargado").length;
+      const traySkipped = trayResults.filter(
+        (r) => r.status === "omitido_existente",
+      ).length;
+      const trayUnavailable = trayResults.filter(
+        (r) => r.status === "no_disponible",
+      ).length;
+      const trayFailed = trayResults.filter((r) => r.status === "error").length;
+      lines.push(
+        `${tray.label}: ${trayDownloaded} nuevos, ${traySkipped} existentes, ${trayUnavailable} no disponibles, ${trayFailed} errores.`,
+      );
+    }
+
+    const errors = results.filter((r) => r.status === "error");
+    lines.push("", `ERRORES DETALLADOS (${errors.length})`);
+    if (errors.length === 0) {
+      lines.push("Sin errores en esta corrida.");
+    } else {
+      for (const error of errors) {
+        lines.push(
+          `- ${error.trayLabel} · ${error.documentId} · ${error.artifactType}: ${error.detail || "sin detalle"}`,
+        );
+      }
+    }
+    lines.push("");
+
+    return lines.join("\n");
+  }
+
+  async function saveContingencyReport(destination, results) {
+    const failed = results.some((r) => r.status === "error");
+    if (!failed) {
+      return;
+    }
+
+    const report = buildContingencyReport(destination, results);
+    const filename = `resumen-contingencias-${timestampForFilename(new Date())}.txt`;
+
+    try {
+      if (destination.kind === "directory") {
+        await writeFile(destination.handle, filename, report);
+      } else if (destination.kind === "native-directory") {
+        await extensionMessage({
+          action: "nativeWriteLog",
+          content: report,
+          filename,
+        });
+      } else {
+        return;
+      }
+      addLog(`Resumen de contingencias guardado: ${filename}`);
+    } catch (error) {
+      addLog(
+        `No se pudo guardar el resumen de contingencias: ${error.message}`,
+      );
+    }
+  }
+
   async function saveArtifact({
     destination,
     folder,
@@ -1406,6 +1497,8 @@
           );
         }
       }
+
+      await saveContingencyReport(destination, results);
 
       setStatus(
         `Proceso terminado: ${downloaded} archivos nuevos, ${skipped} ya existían, ${unavailable} no disponibles y ${failed} errores.`,

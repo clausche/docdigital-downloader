@@ -70,6 +70,19 @@ function validateDownloadDestination(folder, subpath) {
   validateSubpath(subpath);
 }
 
+function validateLogContent(content) {
+  const value = String(content || "");
+  if (value.length === 0 || value.length > 2_000_000) {
+    throw new Error("El contenido del registro de contingencias no es válido.");
+  }
+  return value;
+}
+
+function validateLogFilename(filename) {
+  const safe = sanitizeFilename(filename || "resumen-contingencias.txt");
+  return safe.toLowerCase().endsWith(".txt") ? safe : `${safe}.txt`;
+}
+
 function validateFileRequest(message) {
   const url = new URL(message.url);
   if (
@@ -194,6 +207,12 @@ async function handleMessage(message, sender) {
       });
     case "nativeDownload":
       return startNativeDownload(message);
+    case "nativeWriteLog":
+      return nativeRequest({
+        action: "writeLog",
+        content: validateLogContent(message.content),
+        filename: validateLogFilename(message.filename),
+      });
     case "nativeCancel":
       disconnectNativeHost("Descarga cancelada.");
       return {};

@@ -49,6 +49,7 @@ ANNEX_SUBPATH = re.compile(r"^Anexos/[0-9]+$")
 MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 MAX_TOKEN_LENGTH = 16_384
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
+MAX_LOG_BYTES = 2 * 1024 * 1024
 
 selected_directory: Path | None = None
 
@@ -173,6 +174,53 @@ def destination_path(folder: Any, subpath: Any) -> Path:
     if not resolved_target.is_relative_to(selected_root):
         raise ValueError("La carpeta de destino sale de la ubicación seleccionada.")
     return resolved_target
+
+
+def root_log_path(filename: Any) -> Path:
+    if selected_directory is None:
+        raise RuntimeError("Primero debes seleccionar una carpeta.")
+
+    selected_root = selected_directory.resolve(strict=True)
+    safe_name = sanitize_filename(filename)
+    if not safe_name.lower().endswith(".txt"):
+        safe_name += ".txt"
+
+    target = selected_root / safe_name
+    candidate = target.resolve(strict=False)
+    if not candidate.is_relative_to(selected_root):
+        raise ValueError("El nombre del archivo de registro no es válido.")
+    return candidate
+
+
+def write_log(message: dict[str, Any]) -> dict[str, Any]:
+    content = str(message.get("content") or "")
+    if not content:
+        raise ValueError("El contenido del registro está vacío.")
+    encoded = content.encode("utf-8")
+    if len(encoded) > MAX_LOG_BYTES:
+        raise ValueError("El registro de contingencias es demasiado grande.")
+
+    target = root_log_path(message.get("filename"))
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            prefix=".contingencias.",
+            suffix=".part",
+            dir=target.parent,
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(encoded)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(temporary_path, target)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+    return {"filename": target.name}
 
 
 def default_picker_directory() -> Path:
@@ -309,6 +357,8 @@ def handle_message(message: dict[str, Any]) -> dict[str, Any]:
         return existing_files(message)
     if action == "download":
         return download_file(message)
+    if action == "writeLog":
+        return write_log(message)
     raise ValueError("Acción nativa no permitida.")
 
 
