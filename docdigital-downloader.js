@@ -10,12 +10,14 @@
   const MAX_PAGES = 1000;
   const REQUEST_DELAY_MS = 250;
   const MAX_CONSECUTIVE_ERRORS = 5;
+  const FOLDER_CACHE_MIN_FILES = 20;
   const HAS_DIRECTORY_PICKER =
     window.isSecureContext && "showDirectoryPicker" in window;
   const START_BUTTON_LABEL = "Elegir carpeta e iniciar";
   const HISTORY_DB_NAME = "docdigital-downloader";
-  const HISTORY_DB_VERSION = 1;
+  const HISTORY_DB_VERSION = 2;
   const HISTORY_STORE_NAME = "reports";
+  const FOLDER_INDEX_STORE_NAME = "folderIndex";
 
   if (!ALLOWED_HOSTS.has(window.location.hostname)) {
     return;
@@ -122,6 +124,7 @@
 
   let activeController = null;
   let activeDestinationKind = null;
+  let activeDestinationName = null;
   let cancelled = false;
   let running = false;
   let selectingDestination = false;
@@ -427,6 +430,9 @@
             autoIncrement: true,
           });
         }
+        if (!db.objectStoreNames.contains(FOLDER_INDEX_STORE_NAME)) {
+          db.createObjectStore(FOLDER_INDEX_STORE_NAME, { keyPath: "key" });
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -463,6 +469,49 @@
       return entry;
     } catch {
       return null;
+    }
+  }
+
+  async function hashFilenames(names) {
+    const data = new TextEncoder().encode(names.slice().sort().join("\n"));
+    const digest = await window.crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  function folderIndexKey(folder, subpath) {
+    return `${activeDestinationName || ""}::${folder}::${subpath || ""}`;
+  }
+
+  async function getCachedFolderIndex(key) {
+    try {
+      const db = await openHistoryDb();
+      const value = await new Promise((resolve, reject) => {
+        const transaction = db.transaction(FOLDER_INDEX_STORE_NAME, "readonly");
+        const request = transaction.objectStore(FOLDER_INDEX_STORE_NAME).get(key);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+      });
+      db.close();
+      return value;
+    } catch {
+      return null;
+    }
+  }
+
+  async function setCachedFolderIndex(key, fingerprint, filenames) {
+    try {
+      const db = await openHistoryDb();
+      await new Promise((resolve, reject) => {
+        const transaction = db.transaction(FOLDER_INDEX_STORE_NAME, "readwrite");
+        transaction.objectStore(FOLDER_INDEX_STORE_NAME).put({ key, fingerprint, filenames });
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+      db.close();
+    } catch {
+      // IndexedDB puede no estar disponible (modo privado, cuota, etc.).
     }
   }
 
@@ -618,11 +667,28 @@
       throw new Error("El destino de descarga no es compatible.");
     }
 
-    const filenames = new Set();
+    const fileEntries = [];
     for await (const entry of destination.handle.values()) {
-      if (entry.kind !== "file") {
-        continue;
+      if (entry.kind === "file") {
+        fileEntries.push(entry);
       }
+    }
+
+    // Carpetas chicas (p. ej. Anexos de un solo documento) no justifican el
+    // costo de hashear y consultar IndexedDB: se revisan directo, como antes.
+    const useCache = fileEntries.length >= FOLDER_CACHE_MIN_FILES;
+    const cacheKey = useCache ? folderIndexKey(folder, subpath) : null;
+    let fingerprint = null;
+    if (useCache) {
+      fingerprint = await hashFilenames(fileEntries.map((entry) => entry.name));
+      const cached = await getCachedFolderIndex(cacheKey);
+      if (cached && cached.fingerprint === fingerprint) {
+        return new Set(cached.filenames);
+      }
+    }
+
+    const filenames = new Set();
+    for (const entry of fileEntries) {
       try {
         const file = await entry.getFile();
         if (file.size > 0) {
@@ -631,6 +697,9 @@
       } catch {
         // Un archivo ilegible no debe impedir revisar el resto de la carpeta.
       }
+    }
+    if (useCache) {
+      void setCachedFolderIndex(cacheKey, fingerprint, Array.from(filenames));
     }
     return filenames;
   }
@@ -1700,6 +1769,8 @@
     cancelled = false;
     activeController = new AbortController();
     activeDestinationKind = destination.kind;
+    activeDestinationName =
+      destination.kind === "directory" ? destination.handle.name : destination.name;
     addLog(
       destination.kind === "directory"
         ? `Carpeta seleccionada: ${destination.handle.name}`
