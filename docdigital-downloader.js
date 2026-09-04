@@ -138,14 +138,16 @@
       }
       .panel {
         box-sizing: border-box;
-        width: min(390px, calc(100vw - 32px));
-        padding: 18px;
-        border: 1px solid #d5dbe3;
+        width: min(330px, calc(100vw - 32px));
+        padding: 14px;
+        border: 1px solid rgba(213, 219, 227, 0.7);
         border-radius: 10px;
-        background: #ffffff;
-        box-shadow: 0 16px 45px rgba(16, 24, 40, 0.24);
+        background: rgba(255, 255, 255, 0.86);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        box-shadow: 0 16px 45px rgba(16, 24, 40, 0.2);
         color: #17202a;
-        font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font: 13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       .header {
         display: flex;
@@ -155,70 +157,73 @@
       }
       h2 {
         margin: 0;
-        font-size: 17px;
+        font-size: 15px;
         line-height: 1.3;
       }
       p {
-        margin: 8px 0 0;
+        margin: 6px 0 0;
       }
       .muted {
         color: #5d6875;
-        font-size: 12px;
+        font-size: 11px;
       }
       .close {
-        width: 28px;
-        height: 28px;
+        width: 26px;
+        height: 26px;
         border: 0;
         border-radius: 6px;
         background: transparent;
         color: #4d5966;
         cursor: pointer;
-        font-size: 21px;
+        font-size: 19px;
         line-height: 1;
       }
       .close:hover {
-        background: #eef1f4;
+        background: rgba(238, 241, 244, 0.9);
+      }
+      .progress-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
       }
       progress {
+        flex: 1;
         width: 100%;
-        height: 10px;
-        margin-top: 14px;
+        height: 8px;
         accent-color: #005ea8;
       }
-      .status {
-        min-height: 42px;
-        margin-top: 8px;
-        white-space: pre-wrap;
+      .progress-pct {
+        min-width: 32px;
+        text-align: right;
+        font: 600 11px/1 system-ui, sans-serif;
+        color: #005ea8;
       }
-      .log {
-        box-sizing: border-box;
-        max-height: 110px;
-        margin: 10px 0 0;
-        padding: 9px;
-        overflow: auto;
-        border-radius: 6px;
-        background: #f5f7f9;
-        color: #35404b;
-        font: 11px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+      .status {
+        min-height: 36px;
+        margin-top: 8px;
         white-space: pre-wrap;
       }
       .actions {
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
-        margin-top: 14px;
+        margin-top: 12px;
       }
       .button {
-        min-height: 38px;
-        padding: 8px 13px;
+        flex: 1 1 auto;
+        min-width: 100px;
+        min-height: 36px;
+        padding: 8px 12px;
         border: 1px solid #005ea8;
         border-radius: 6px;
         background: #005ea8;
         color: #ffffff;
         cursor: pointer;
-        font: 600 13px/1.2 system-ui, sans-serif;
+        font: 600 12px/1.2 system-ui, sans-serif;
       }
       .button.secondary {
-        background: #ffffff;
+        background: rgba(255, 255, 255, 0.6);
         color: #005ea8;
       }
       .button:disabled {
@@ -242,12 +247,15 @@
         </div>
         <button class="close" type="button" aria-label="Cerrar">×</button>
       </div>
-      <progress value="0" max="1" aria-label="Progreso de descarga"></progress>
+      <div class="progress-row">
+        <progress value="0" max="1" aria-label="Progreso de descarga"></progress>
+        <span class="progress-pct">0%</span>
+      </div>
       <div class="status" role="status">Listo. Inicia sesión en DocDigital antes de comenzar.</div>
-      <pre class="log" aria-label="Registro de descarga">No se guardan credenciales ni tokens.</pre>
       <div class="actions">
         <button class="button start" type="button">${START_BUTTON_LABEL}</button>
         <button class="button secondary cancel" type="button" disabled>Cancelar</button>
+        <button class="button secondary report" type="button" disabled>Abrir resumen</button>
       </div>
     </section>
   `;
@@ -256,23 +264,26 @@
   const closeButton = shadow.querySelector(".close");
   const startButton = shadow.querySelector(".start");
   const cancelButton = shadow.querySelector(".cancel");
+  const reportButton = shadow.querySelector(".report");
   const progress = shadow.querySelector("progress");
+  const progressPct = shadow.querySelector(".progress-pct");
   const status = shadow.querySelector(".status");
-  const log = shadow.querySelector(".log");
-  const logLines = [];
+  let lastReportInfo = null;
 
   function setStatus(message, type = "") {
     status.textContent = message;
     status.className = `status ${type}`.trim();
   }
 
-  function addLog(message) {
-    logLines.push(message);
-    if (logLines.length > 12) {
-      logLines.shift();
-    }
-    log.textContent = logLines.join("\n");
-    log.scrollTop = log.scrollHeight;
+  // El detalle línea a línea ya no se muestra en el panel: queda en el
+  // resumen de contingencias, que siempre se guarda al terminar la descarga.
+  function addLog() {}
+
+  function updateProgress(value) {
+    progress.value = value;
+    const max = progress.max || 1;
+    const pct = Math.round((Math.min(value, max) / max) * 100);
+    progressPct.textContent = `${pct}%`;
   }
 
   function setRunning(value) {
@@ -761,15 +772,10 @@
     }
     lines.push("");
 
-    return lines.join("\n");
+    return "﻿" + lines.join("\n");
   }
 
   async function saveContingencyReport(destination, results) {
-    const failed = results.some((r) => r.status === "error");
-    if (!failed) {
-      return;
-    }
-
     const report = buildContingencyReport(destination, results);
     const filename = `resumen-contingencias-${timestampForFilename(new Date())}.txt`;
 
@@ -786,6 +792,8 @@
         return;
       }
       addLog(`Resumen de contingencias guardado: ${filename}`);
+      lastReportInfo = { destination, filename };
+      reportButton.disabled = false;
     } catch (error) {
       addLog(
         `No se pudo guardar el resumen de contingencias: ${error.message}`,
@@ -1259,7 +1267,7 @@
     );
     let processedTasks = 0;
     progress.max = Math.max(totalTasks * 2, 1);
-    progress.value = 0;
+    updateProgress(0);
 
     for (const run of trayRuns) {
       let consecutiveErrors = 0;
@@ -1283,7 +1291,7 @@
           });
           consecutiveErrors = 0;
           processedTasks += 1;
-          progress.value = processedTasks;
+          updateProgress(processedTasks);
           addLog(
             `${run.tray.label} · ${task.docId}: principal omitido — ya existe`,
           );
@@ -1326,7 +1334,7 @@
         }
 
         processedTasks += 1;
-        progress.value = processedTasks;
+        updateProgress(processedTasks);
         consecutiveErrors = itemFailed ? consecutiveErrors + 1 : 0;
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
           addLog(
@@ -1362,7 +1370,7 @@
           results,
         );
         relatedProcessed += 1;
-        progress.value = Math.min(totalTasks + relatedProcessed, progress.max);
+        updateProgress(Math.min(totalTasks + relatedProcessed, progress.max));
         consecutiveErrors = itemFailed ? consecutiveErrors + 1 : 0;
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
           addLog(
@@ -1376,7 +1384,7 @@
       }
     }
 
-    progress.value = progress.max;
+    updateProgress(progress.max);
   }
 
   closeButton.addEventListener("click", () => {
@@ -1393,6 +1401,34 @@
     }
     cancelButton.disabled = true;
     setStatus("Cancelando…");
+  });
+
+  reportButton.addEventListener("click", async () => {
+    if (!lastReportInfo || reportButton.disabled) {
+      return;
+    }
+    reportButton.disabled = true;
+    try {
+      if (lastReportInfo.destination.kind === "directory") {
+        const fileHandle = await lastReportInfo.destination.handle.getFileHandle(
+          lastReportInfo.filename,
+        );
+        const file = await fileHandle.getFile();
+        const blob = new Blob([file], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } else {
+        await extensionMessage({
+          action: "nativeOpenLog",
+          filename: lastReportInfo.filename,
+        });
+      }
+    } catch (error) {
+      setStatus(`No se pudo abrir el resumen: ${error.message}`, "error");
+    } finally {
+      reportButton.disabled = false;
+    }
   });
 
   startButton.addEventListener("click", async () => {
@@ -1453,7 +1489,6 @@
     cancelled = false;
     activeController = new AbortController();
     activeDestinationKind = destination.kind;
-    logLines.length = 0;
     addLog(
       destination.kind === "directory"
         ? `Carpeta seleccionada: ${destination.handle.name}`
