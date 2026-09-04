@@ -213,11 +213,6 @@ async function handleMessage(message, sender) {
         content: validateLogContent(message.content),
         filename: validateLogFilename(message.filename),
       });
-    case "nativeOpenLog":
-      return nativeRequest({
-        action: "openLog",
-        filename: validateLogFilename(message.filename),
-      });
     case "nativeCancel":
       disconnectNativeHost("Descarga cancelada.");
       return {};

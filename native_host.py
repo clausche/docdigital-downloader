@@ -50,27 +50,8 @@ MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 MAX_TOKEN_LENGTH = 16_384
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 MAX_LOG_BYTES = 2 * 1024 * 1024
-STATE_DIRECTORY = Path.home() / ".local" / "state" / "docdigital-downloader"
-STATE_FILE = STATE_DIRECTORY / "last-directory"
 
 selected_directory: Path | None = None
-
-
-def persist_selected_directory(directory: Path) -> None:
-    try:
-        STATE_DIRECTORY.mkdir(parents=True, exist_ok=True)
-        STATE_FILE.write_text(str(directory), encoding="utf-8")
-    except OSError:
-        pass
-
-
-def load_persisted_directory() -> Path | None:
-    try:
-        raw = STATE_FILE.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    candidate = Path(raw) if raw else None
-    return candidate if candidate and candidate.is_dir() else None
 
 
 class SafeRedirectHandler(HTTPRedirectHandler):
@@ -196,9 +177,6 @@ def destination_path(folder: Any, subpath: Any) -> Path:
 
 
 def root_log_path(filename: Any) -> Path:
-    global selected_directory
-    if selected_directory is None:
-        selected_directory = load_persisted_directory()
     if selected_directory is None:
         raise RuntimeError("Primero debes seleccionar una carpeta.")
 
@@ -243,19 +221,6 @@ def write_log(message: dict[str, Any]) -> dict[str, Any]:
             temporary_path.unlink(missing_ok=True)
 
     return {"filename": target.name}
-
-
-def open_log(message: dict[str, Any]) -> dict[str, Any]:
-    target = root_log_path(message.get("filename"))
-    if not target.is_file():
-        raise ValueError("El resumen ya no existe en la carpeta seleccionada.")
-    subprocess.Popen(
-        ["/usr/bin/xdg-open", str(target)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=picker_environment(),
-    )
-    return {}
 
 
 def default_picker_directory() -> Path:
@@ -321,7 +286,6 @@ def select_directory() -> dict[str, Any]:
     if not candidate.is_dir():
         raise ValueError("El destino seleccionado no es una carpeta.")
     selected_directory = candidate
-    persist_selected_directory(candidate)
     return {"cancelled": False, "name": candidate.name or str(candidate)}
 
 
@@ -395,8 +359,6 @@ def handle_message(message: dict[str, Any]) -> dict[str, Any]:
         return download_file(message)
     if action == "writeLog":
         return write_log(message)
-    if action == "openLog":
-        return open_log(message)
     raise ValueError("Acción nativa no permitida.")
 
 

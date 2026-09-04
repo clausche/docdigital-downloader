@@ -238,6 +238,48 @@
       .success {
         color: #087443;
       }
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(15, 23, 32, 0.45);
+        z-index: 2147483647;
+      }
+      .modal-overlay[hidden] {
+        display: none;
+      }
+      .modal {
+        width: min(560px, calc(100vw - 48px));
+        max-height: min(70vh, 560px);
+        display: flex;
+        flex-direction: column;
+        background: #ffffff;
+        border-radius: 10px;
+        box-shadow: 0 20px 60px rgba(16, 24, 40, 0.35);
+        overflow: hidden;
+      }
+      .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-bottom: 1px solid #e5e9ee;
+      }
+      .modal-header h3 {
+        margin: 0;
+        font: 600 15px/1.3 system-ui, sans-serif;
+        color: #17202a;
+      }
+      .modal-text {
+        margin: 0;
+        padding: 14px 16px;
+        overflow: auto;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+        white-space: pre-wrap;
+        color: #1f2733;
+      }
     </style>
     <section class="panel" aria-label="Descargador de documentos de DocDigital">
       <div class="header">
@@ -258,6 +300,15 @@
         <button class="button secondary report" type="button" disabled>Abrir resumen</button>
       </div>
     </section>
+    <div class="modal-overlay" hidden>
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Resumen de contingencias</h3>
+          <button class="close modal-close" type="button" aria-label="Cerrar">×</button>
+        </div>
+        <pre class="modal-text"></pre>
+      </div>
+    </div>
   `;
   document.documentElement.appendChild(host);
 
@@ -265,6 +316,9 @@
   const startButton = shadow.querySelector(".start");
   const cancelButton = shadow.querySelector(".cancel");
   const reportButton = shadow.querySelector(".report");
+  const modalOverlay = shadow.querySelector(".modal-overlay");
+  const modalClose = shadow.querySelector(".modal-close");
+  const modalText = shadow.querySelector(".modal-text");
   const progress = shadow.querySelector("progress");
   const progressPct = shadow.querySelector(".progress-pct");
   const status = shadow.querySelector(".status");
@@ -772,28 +826,29 @@
     }
     lines.push("");
 
-    return "﻿" + lines.join("\n");
+    return lines.join("\n");
   }
 
   async function saveContingencyReport(destination, results) {
     const report = buildContingencyReport(destination, results);
     const filename = `resumen-contingencias-${timestampForFilename(new Date())}.txt`;
+    lastReportInfo = { text: report, filename };
+    reportButton.disabled = false;
 
     try {
+      const fileContent = "﻿" + report;
       if (destination.kind === "directory") {
-        await writeFile(destination.handle, filename, report);
+        await writeFile(destination.handle, filename, fileContent);
       } else if (destination.kind === "native-directory") {
         await extensionMessage({
           action: "nativeWriteLog",
-          content: report,
+          content: fileContent,
           filename,
         });
       } else {
         return;
       }
       addLog(`Resumen de contingencias guardado: ${filename}`);
-      lastReportInfo = { destination, filename };
-      reportButton.disabled = false;
     } catch (error) {
       addLog(
         `No se pudo guardar el resumen de contingencias: ${error.message}`,
@@ -1403,31 +1458,21 @@
     setStatus("Cancelando…");
   });
 
-  reportButton.addEventListener("click", async () => {
-    if (!lastReportInfo || reportButton.disabled) {
+  reportButton.addEventListener("click", () => {
+    if (!lastReportInfo) {
       return;
     }
-    reportButton.disabled = true;
-    try {
-      if (lastReportInfo.destination.kind === "directory") {
-        const fileHandle = await lastReportInfo.destination.handle.getFileHandle(
-          lastReportInfo.filename,
-        );
-        const file = await fileHandle.getFile();
-        const blob = new Blob([file], { type: "text/plain;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        window.open(url, "_blank");
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      } else {
-        await extensionMessage({
-          action: "nativeOpenLog",
-          filename: lastReportInfo.filename,
-        });
-      }
-    } catch (error) {
-      setStatus(`No se pudo abrir el resumen: ${error.message}`, "error");
-    } finally {
-      reportButton.disabled = false;
+    modalText.textContent = lastReportInfo.text;
+    modalOverlay.hidden = false;
+  });
+
+  modalClose.addEventListener("click", () => {
+    modalOverlay.hidden = true;
+  });
+
+  modalOverlay.addEventListener("click", (event) => {
+    if (event.target === modalOverlay) {
+      modalOverlay.hidden = true;
     }
   });
 
