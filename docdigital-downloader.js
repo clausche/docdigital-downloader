@@ -13,6 +13,7 @@
   const HAS_DIRECTORY_PICKER =
     window.isSecureContext && "showDirectoryPicker" in window;
   const START_BUTTON_LABEL = "Elegir carpeta e iniciar";
+  const LAST_REPORT_STORAGE_KEY = "docdigitalDownloader.lastReport";
 
   if (!ALLOWED_HOSTS.has(window.location.hostname)) {
     return;
@@ -267,10 +268,66 @@
         padding: 14px 16px;
         border-bottom: 1px solid #e5e9ee;
       }
+      .modal-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .modal-icon-badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
+        border-radius: 9px;
+        background: rgba(0, 94, 168, 0.12);
+        color: #005ea8;
+      }
       .modal-header h3 {
         margin: 0;
         font: 600 15px/1.3 system-ui, sans-serif;
         color: #17202a;
+      }
+      .modal-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+        gap: 8px;
+        padding: 14px 16px;
+        border-bottom: 1px solid #e5e9ee;
+        background: #fafbfc;
+      }
+      .stat {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 8px 10px;
+        border-radius: 8px;
+      }
+      .stat-value {
+        font: 700 18px/1.1 system-ui, sans-serif;
+      }
+      .stat-label {
+        font: 600 10px/1.2 system-ui, sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        opacity: 0.85;
+      }
+      .stat-new {
+        background: rgba(0, 94, 168, 0.12);
+        color: #005ea8;
+      }
+      .stat-existing {
+        background: rgba(93, 104, 117, 0.12);
+        color: #46505c;
+      }
+      .stat-unavailable {
+        background: rgba(217, 140, 0, 0.14);
+        color: #9a6300;
+      }
+      .stat-error {
+        background: rgba(180, 35, 24, 0.12);
+        color: #b42318;
       }
       .modal-text {
         margin: 0;
@@ -303,8 +360,35 @@
     <div class="modal-overlay" hidden>
       <div class="modal">
         <div class="modal-header">
-          <h3>Resumen de contingencias</h3>
+          <div class="modal-title">
+            <span class="modal-icon-badge">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" />
+                <path d="m9 14 2 2 4-4" />
+              </svg>
+            </span>
+            <h3>Resumen de contingencias</h3>
+          </div>
           <button class="close modal-close" type="button" aria-label="Cerrar">×</button>
+        </div>
+        <div class="modal-stats">
+          <div class="stat stat-new">
+            <span class="stat-value stat-new-value">0</span>
+            <span class="stat-label">Nuevos</span>
+          </div>
+          <div class="stat stat-existing">
+            <span class="stat-value stat-existing-value">0</span>
+            <span class="stat-label">Ya existían</span>
+          </div>
+          <div class="stat stat-unavailable">
+            <span class="stat-value stat-unavailable-value">0</span>
+            <span class="stat-label">No disponibles</span>
+          </div>
+          <div class="stat stat-error">
+            <span class="stat-value stat-error-value">0</span>
+            <span class="stat-label">Errores</span>
+          </div>
         </div>
         <pre class="modal-text"></pre>
       </div>
@@ -319,10 +403,40 @@
   const modalOverlay = shadow.querySelector(".modal-overlay");
   const modalClose = shadow.querySelector(".modal-close");
   const modalText = shadow.querySelector(".modal-text");
+  const modalStatValues = {
+    downloaded: shadow.querySelector(".stat-new-value"),
+    skipped: shadow.querySelector(".stat-existing-value"),
+    unavailable: shadow.querySelector(".stat-unavailable-value"),
+    failed: shadow.querySelector(".stat-error-value"),
+  };
   const progress = shadow.querySelector("progress");
   const progressPct = shadow.querySelector(".progress-pct");
   const status = shadow.querySelector(".status");
   let lastReportInfo = null;
+
+  function persistLastReport(info) {
+    try {
+      window.localStorage.setItem(LAST_REPORT_STORAGE_KEY, JSON.stringify(info));
+    } catch {
+      // El almacenamiento local puede no estar disponible (modo privado, cuota, etc.).
+    }
+  }
+
+  function loadPersistedReport() {
+    try {
+      const raw = window.localStorage.getItem(LAST_REPORT_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.text === "string" && typeof parsed?.filename === "string") {
+        return parsed;
+      }
+    } catch {
+      // Ignora un valor corrupto o no disponible.
+    }
+    return null;
+  }
 
   function setStatus(message, type = "") {
     status.textContent = message;
@@ -348,6 +462,12 @@
     startButton.textContent = value
       ? "Descargando…"
       : START_BUTTON_LABEL;
+  }
+
+  const persistedReport = loadPersistedReport();
+  if (persistedReport) {
+    lastReportInfo = persistedReport;
+    reportButton.disabled = false;
   }
 
   function parseCookieValue(rawValue) {
@@ -775,14 +895,20 @@
     );
   }
 
+  function countResults(results) {
+    return {
+      downloaded: results.filter((r) => r.status === "descargado").length,
+      unavailable: results.filter((r) => r.status === "no_disponible").length,
+      failed: results.filter((r) => r.status === "error").length,
+      skipped: results.filter((r) => r.status === "omitido_existente").length,
+    };
+  }
+
   function buildContingencyReport(destination, results) {
     const now = new Date();
     const destinationName =
       destination.kind === "directory" ? destination.handle.name : destination.name;
-    const downloaded = results.filter((r) => r.status === "descargado").length;
-    const unavailable = results.filter((r) => r.status === "no_disponible").length;
-    const failed = results.filter((r) => r.status === "error").length;
-    const skipped = results.filter((r) => r.status === "omitido_existente").length;
+    const { downloaded, unavailable, failed, skipped } = countResults(results);
 
     const lines = [
       "DocDigital Downloader — Resumen de contingencias",
@@ -832,8 +958,9 @@
   async function saveContingencyReport(destination, results) {
     const report = buildContingencyReport(destination, results);
     const filename = `resumen-contingencias-${timestampForFilename(new Date())}.txt`;
-    lastReportInfo = { text: report, filename };
+    lastReportInfo = { text: report, filename, counts: countResults(results) };
     reportButton.disabled = false;
+    persistLastReport(lastReportInfo);
 
     try {
       const fileContent = "﻿" + report;
@@ -1462,6 +1589,11 @@
     if (!lastReportInfo) {
       return;
     }
+    const counts = lastReportInfo.counts || {};
+    modalStatValues.downloaded.textContent = counts.downloaded ?? 0;
+    modalStatValues.skipped.textContent = counts.skipped ?? 0;
+    modalStatValues.unavailable.textContent = counts.unavailable ?? 0;
+    modalStatValues.failed.textContent = counts.failed ?? 0;
     modalText.textContent = lastReportInfo.text;
     modalOverlay.hidden = false;
   });
