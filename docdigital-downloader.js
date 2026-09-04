@@ -13,7 +13,9 @@
   const HAS_DIRECTORY_PICKER =
     window.isSecureContext && "showDirectoryPicker" in window;
   const START_BUTTON_LABEL = "Elegir carpeta e iniciar";
-  const LAST_REPORT_STORAGE_KEY = "docdigitalDownloader.lastReport";
+  const HISTORY_DB_NAME = "docdigital-downloader";
+  const HISTORY_DB_VERSION = 1;
+  const HISTORY_STORE_NAME = "reports";
 
   if (!ALLOWED_HOSTS.has(window.location.hostname)) {
     return;
@@ -414,28 +416,54 @@
   const status = shadow.querySelector(".status");
   let lastReportInfo = null;
 
-  function persistLastReport(info) {
+  function openHistoryDb() {
+    return new Promise((resolve, reject) => {
+      const request = window.indexedDB.open(HISTORY_DB_NAME, HISTORY_DB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(HISTORY_STORE_NAME)) {
+          db.createObjectStore(HISTORY_STORE_NAME, {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function addHistoryEntry(entry) {
     try {
-      window.localStorage.setItem(LAST_REPORT_STORAGE_KEY, JSON.stringify(info));
+      const db = await openHistoryDb();
+      await new Promise((resolve, reject) => {
+        const transaction = db.transaction(HISTORY_STORE_NAME, "readwrite");
+        transaction.objectStore(HISTORY_STORE_NAME).add(entry);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+      db.close();
     } catch {
-      // El almacenamiento local puede no estar disponible (modo privado, cuota, etc.).
+      // IndexedDB puede no estar disponible (modo privado, cuota, etc.).
     }
   }
 
-  function loadPersistedReport() {
+  async function getLatestHistoryEntry() {
     try {
-      const raw = window.localStorage.getItem(LAST_REPORT_STORAGE_KEY);
-      if (!raw) {
-        return null;
-      }
-      const parsed = JSON.parse(raw);
-      if (typeof parsed?.text === "string" && typeof parsed?.filename === "string") {
-        return parsed;
-      }
+      const db = await openHistoryDb();
+      const entry = await new Promise((resolve, reject) => {
+        const transaction = db.transaction(HISTORY_STORE_NAME, "readonly");
+        const request = transaction
+          .objectStore(HISTORY_STORE_NAME)
+          .openCursor(null, "prev");
+        request.onsuccess = () => resolve(request.result?.value ?? null);
+        request.onerror = () => reject(request.error);
+      });
+      db.close();
+      return entry;
     } catch {
-      // Ignora un valor corrupto o no disponible.
+      return null;
     }
-    return null;
   }
 
   function setStatus(message, type = "") {
@@ -464,11 +492,12 @@
       : START_BUTTON_LABEL;
   }
 
-  const persistedReport = loadPersistedReport();
-  if (persistedReport) {
-    lastReportInfo = persistedReport;
-    reportButton.disabled = false;
-  }
+  getLatestHistoryEntry().then((entry) => {
+    if (entry) {
+      lastReportInfo = { text: entry.text, filename: entry.filename, counts: entry.counts };
+      reportButton.disabled = false;
+    }
+  });
 
   function parseCookieValue(rawValue) {
     let decoded = rawValue;
@@ -960,7 +989,12 @@
     const filename = `resumen-contingencias-${timestampForFilename(new Date())}.txt`;
     lastReportInfo = { text: report, filename, counts: countResults(results) };
     reportButton.disabled = false;
-    persistLastReport(lastReportInfo);
+    void addHistoryEntry({
+      timestamp: Date.now(),
+      destinationName:
+        destination.kind === "directory" ? destination.handle.name : destination.name,
+      ...lastReportInfo,
+    });
 
     try {
       const fileContent = "﻿" + report;
