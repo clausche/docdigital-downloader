@@ -15,9 +15,10 @@
     window.isSecureContext && "showDirectoryPicker" in window;
   const START_BUTTON_LABEL = "Elegir carpeta e iniciar";
   const HISTORY_DB_NAME = "docdigital-downloader";
-  const HISTORY_DB_VERSION = 2;
+  const HISTORY_DB_VERSION = 3;
   const HISTORY_STORE_NAME = "reports";
   const FOLDER_INDEX_STORE_NAME = "folderIndex";
+  const TRAY_SNAPSHOT_STORE_NAME = "traySnapshot";
 
   if (!ALLOWED_HOSTS.has(window.location.hostname)) {
     return;
@@ -433,6 +434,9 @@
         if (!db.objectStoreNames.contains(FOLDER_INDEX_STORE_NAME)) {
           db.createObjectStore(FOLDER_INDEX_STORE_NAME, { keyPath: "key" });
         }
+        if (!db.objectStoreNames.contains(TRAY_SNAPSHOT_STORE_NAME)) {
+          db.createObjectStore(TRAY_SNAPSHOT_STORE_NAME, { keyPath: "key" });
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -472,7 +476,7 @@
     }
   }
 
-  async function hashFilenames(names) {
+  async function hashStrings(names) {
     const data = new TextEncoder().encode(names.slice().sort().join("\n"));
     const digest = await window.crypto.subtle.digest("SHA-256", data);
     return Array.from(new Uint8Array(digest))
@@ -484,12 +488,16 @@
     return `${activeDestinationName || ""}::${folder}::${subpath || ""}`;
   }
 
-  async function getCachedFolderIndex(key) {
+  function traySnapshotKey(trayKey) {
+    return `${activeDestinationName || ""}::${trayKey}`;
+  }
+
+  async function getFromStore(storeName, key) {
     try {
       const db = await openHistoryDb();
       const value = await new Promise((resolve, reject) => {
-        const transaction = db.transaction(FOLDER_INDEX_STORE_NAME, "readonly");
-        const request = transaction.objectStore(FOLDER_INDEX_STORE_NAME).get(key);
+        const transaction = db.transaction(storeName, "readonly");
+        const request = transaction.objectStore(storeName).get(key);
         request.onsuccess = () => resolve(request.result || null);
         request.onerror = () => reject(request.error);
       });
@@ -500,12 +508,12 @@
     }
   }
 
-  async function setCachedFolderIndex(key, fingerprint, filenames) {
+  async function putInStore(storeName, value) {
     try {
       const db = await openHistoryDb();
       await new Promise((resolve, reject) => {
-        const transaction = db.transaction(FOLDER_INDEX_STORE_NAME, "readwrite");
-        transaction.objectStore(FOLDER_INDEX_STORE_NAME).put({ key, fingerprint, filenames });
+        const transaction = db.transaction(storeName, "readwrite");
+        transaction.objectStore(storeName).put(value);
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);
       });
@@ -513,6 +521,26 @@
     } catch {
       // IndexedDB puede no estar disponible (modo privado, cuota, etc.).
     }
+  }
+
+  async function getCachedFolderIndex(key) {
+    return getFromStore(FOLDER_INDEX_STORE_NAME, key);
+  }
+
+  async function setCachedFolderIndex(key, fingerprint, filenames) {
+    return putInStore(FOLDER_INDEX_STORE_NAME, { key, fingerprint, filenames });
+  }
+
+  async function getTraySnapshot(trayKey) {
+    return getFromStore(TRAY_SNAPSHOT_STORE_NAME, traySnapshotKey(trayKey));
+  }
+
+  async function setTraySnapshot(trayKey, idsHash, hadErrors) {
+    return putInStore(TRAY_SNAPSHOT_STORE_NAME, {
+      key: traySnapshotKey(trayKey),
+      idsHash,
+      hadErrors,
+    });
   }
 
   function setStatus(message, type = "") {
@@ -680,7 +708,7 @@
     const cacheKey = useCache ? folderIndexKey(folder, subpath) : null;
     let fingerprint = null;
     if (useCache) {
-      fingerprint = await hashFilenames(fileEntries.map((entry) => entry.name));
+      fingerprint = await hashStrings(fileEntries.map((entry) => entry.name));
       const cached = await getCachedFolderIndex(cacheKey);
       if (cached && cached.fingerprint === fingerprint) {
         return new Set(cached.filenames);
@@ -1497,6 +1525,11 @@
     for (const tray of TRAYS) {
       try {
         const tasks = await listTasks(tray);
+        const idsHash = await hashStrings(tasks.map((task) => String(task.docId)));
+        const snapshot = await getTraySnapshot(tray.key);
+        const skipRelated = Boolean(
+          snapshot && snapshot.idsHash === idsHash && !snapshot.hadErrors,
+        );
         const trayDestination =
           destination.kind === "directory"
             ? {
@@ -1518,10 +1551,17 @@
           tasks,
           destination: trayDestination,
           existingDocumentIds,
+          idsHash,
+          skipRelated,
         });
         addLog(
           `${tray.label}: ${tasks.length} encontrados, ${existingDocumentIds.size} existentes.`,
         );
+        if (skipRelated) {
+          addLog(
+            `${tray.label}: sin cambios desde la última corrida sin errores, se omite revisión de anexos y trazabilidad.`,
+          );
+        }
       } catch (error) {
         if (
           error?.name === "AbortError" ||
@@ -1638,6 +1678,11 @@
       if (run.tasks.length === 0) {
         continue;
       }
+      if (run.skipRelated) {
+        relatedProcessed += run.tasks.length;
+        updateProgress(Math.min(totalTasks + relatedProcessed, progress.max));
+        continue;
+      }
       const traceState = await prepareTraceState(run, results);
       let consecutiveErrors = 0;
       for (const task of run.tasks) {
@@ -1667,6 +1712,13 @@
           await delay(REQUEST_DELAY_MS, activeController?.signal);
         }
       }
+    }
+
+    for (const run of trayRuns) {
+      const hadErrors = results.some(
+        (result) => result.trayKey === run.tray.key && result.status === "error",
+      );
+      void setTraySnapshot(run.tray.key, run.idsHash, hadErrors);
     }
 
     updateProgress(progress.max);
